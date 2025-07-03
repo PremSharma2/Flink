@@ -72,7 +72,7 @@ object MultipleStreams {
         .assignTimestampsAndWatermarks(
           WatermarkStrategy.forBoundedOutOfOrderness(java.time.Duration.ofMillis(500))
             .withTimestampAssigner(new SerializableTimestampAssigner[ShoppingCartEvent] {
-              override def extractTimestamp(element: ShoppingCartEvent, recordTimestamp: Long) =
+              override def extractTimestamp(element: ShoppingCartEvent, recordTimestamp: Long): Long =
                 element.time.toEpochMilli
             })
         )
@@ -82,7 +82,7 @@ object MultipleStreams {
       .assignTimestampsAndWatermarks(
         WatermarkStrategy.forBoundedOutOfOrderness(java.time.Duration.ofMillis(500))
           .withTimestampAssigner(new SerializableTimestampAssigner[CatalogEvent] {
-            override def extractTimestamp(element: CatalogEvent, recordTimestamp: Long) =
+            override def extractTimestamp(element: CatalogEvent, recordTimestamp: Long): Long =
               element.time.toEpochMilli
           })
       )
@@ -99,7 +99,7 @@ object MultipleStreams {
                                      right: CatalogEvent,
                                      ctx: ProcessJoinFunction[ShoppingCartEvent, CatalogEvent, String]#Context,
                                      out: Collector[String]
-                                   ) =
+                                   ): Unit =
           out.collect(s"User ${left.userId} browsed at ${right.time} and bought at ${left.time}")
       })
 
@@ -131,7 +131,7 @@ object MultipleStreams {
                                       value: ShoppingCartEvent,
                                       ctx: CoProcessFunction[ShoppingCartEvent, CatalogEvent, Double]#Context,
                                       out: Collector[Double]
-                                    ) = {
+                                    ): Unit = {
           shoppingCartEventCount += 1
           out.collect(shoppingCartEventCount * 100.0 / (shoppingCartEventCount + catalogEventCount))
         }
@@ -140,7 +140,7 @@ object MultipleStreams {
                                       value: CatalogEvent,
                                       ctx: CoProcessFunction[ShoppingCartEvent, CatalogEvent, Double]#Context,
                                       out: Collector[Double]
-                                    ) = {
+                                    ): Unit = {
           catalogEventCount += 1
           out.collect(shoppingCartEventCount * 100.0 / (shoppingCartEventCount + catalogEventCount))
         }

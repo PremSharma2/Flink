@@ -1,11 +1,18 @@
 package part2datastreams
 
+import org.apache.flink.api.common.functions.{FlatMapFunction, MapFunction, ReduceFunction}
+import org.apache.flink.api.common.serialization.SimpleStringEncoder
+import org.apache.flink.core.fs.Path
+import org.apache.flink.streaming.api.functions.ProcessFunction
+import org.apache.flink.streaming.api.functions.sink.filesystem.StreamingFileSink
 import org.apache.flink.streaming.api.scala._
+import org.apache.flink.util.Collector
 
 object EssentialStreams {
 
   private def applicationTemplate(): Unit = {
     // execution environment
+    //equivalent SparkSession
     val env: StreamExecutionEnvironment = StreamExecutionEnvironment.getExecutionEnvironment
 
     // in between, add any sort of computations
@@ -49,7 +56,129 @@ object EssentialStreams {
     env.execute()
   }
 
+  /**
+   *  Exercise: FizzBuzz on Flink
+   *  - take a stream of 100 natural numbers
+   *  - for every number
+   *    - if n % 3 == 0 then return "fizz"
+   *    - if n % 5 == 0 => "buzz"
+   *    - if both => "fizzbuzz"
+   *  - write the numbers for which you said "fizzbuzz" to a file
+   */
+  case class FizzBuzzResult(n: Long, output: String)
+
+  def fizzBuzzExercise(): Unit = {
+    val env: StreamExecutionEnvironment = StreamExecutionEnvironment.getExecutionEnvironment
+    //Stream
+    val numbers = env.fromSequence(1, 100)
+
+    // map
+    val fizzbuzz = numbers
+      .map { n =>
+        val output =
+          if (n % 3 == 0 && n % 5 == 0) "fizzbuzz"
+          else if (n % 3 == 0) "fizz"
+          else if (n % 5 == 0) "buzz"
+          else s"$n"
+        FizzBuzzResult(n, output)
+      }
+      .filter(_.output == "fizzbuzz") // DataStream[FizzBuzzResult]
+      .map(_.n) // DataStream[Long]
+
+    // alternative to
+    // fizzbuzz.writeAsText("output/fizzbuzz.txt").setParallelism(1)
+
+    // add a SINK
+    fizzbuzz.addSink(
+      StreamingFileSink
+        .forRowFormat(
+          new Path("output/streaming_sink"),
+          new SimpleStringEncoder[Long]("UTF-8")
+        )
+        .build()
+    ).setParallelism(1)
+
+    env.execute()
+  }
+
+  // explicit transformations
+  def demoExplicitTransformations(): Unit = {
+
+    val env: StreamExecutionEnvironment = StreamExecutionEnvironment.getExecutionEnvironment
+    val numbers = env.fromSequence(1, 100)
+
+    // map
+    val doubledNumbers = numbers.map(_ * 2)
+
+    // explicit version
+    val doubledNumbers_v2 = numbers.map(new MapFunction[Long, Long] {
+      // declare fields, methods, ...
+      override def map(value: Long) = value * 2
+    })
+
+    // flatMap
+    /**
+     * All elements of the list are emitted individually
+     *  into the resulting DataStream
+     *   Extract → Transform → Emit
+     */
+    val expandedNumbers = numbers.flatMap(n => Range.Long(1, n, 1).toList)
+
+    // explicit version
+    val expandedNumbers_v2 = numbers.flatMap(new FlatMapFunction[Long, Long] {
+      // declare fields, methods, ...
+      override def flatMap(n: Long, out: Collector[Long]): Unit =
+        Range.Long(1, n, 1).foreach { i =>
+          out.collect(i) // imperative style - pushes the new element downstream to the flink
+        }
+    })
+
+    // process method
+    // ProcessFunction is THE MOST GENERAL function to process elements in Flink
+    /**
+     * ProcessFunction[IN, OUT] is Flink's lowest-level, most general stream processing API.
+     * It gives you access to:
+     *
+     * Input record (n)
+     *
+     * ctx: metadata about time, key, timers, and watermarks
+     *
+     * out: collector to emit one or more outputs to O/P Stream
+     */
+    val expandedNumbers_v3 = numbers.process(new ProcessFunction[Long,Long] {
+      override def processElement(input: Long, ctx: ProcessFunction[Long, Long]#Context, out: Collector[Long]): Unit = {
+        Range.Long(1,input,1).foreach(
+          
+          i=> out.collect(i) // imperative style - pushes the new element downstream to the flink
+        )
+      }
+
+    })
+
+    // reduce
+    // happens on keyed streams
+    /*
+      [ 1, false
+        2, true
+
+        100, true
+
+      true => 2, 6, 12, 20, ...
+      false => 1, 4, 9, 16, ...
+     */
+    val keyedNumbers: KeyedStream[Long, Boolean] = numbers.keyBy(n=> n%2==0)
+    // reduce - FP approach
+    val sumByKey = keyedNumbers.reduce(_+_)// sum up all the elements BY KEY
+
+    // reduce - explicit approach in imperative programming
+    val sumByKey_v2 = keyedNumbers.reduce(new ReduceFunction[Long] {
+      // additional fields, methods...
+      override def reduce(x: Long, y: Long): Long = x+y
+    })
+    sumByKey_v2.print()
+    env.execute()
+  }
   def main(args: Array[String]): Unit = {
-    demoTransformations()
+    demoExplicitTransformations()
   }
 }

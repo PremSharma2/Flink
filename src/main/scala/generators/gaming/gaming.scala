@@ -8,7 +8,9 @@ import scala.concurrent.duration.FiniteDuration
  * A package describing events related to a multiplayer game.
  * We analyze some essential Flink features based on these data types.
  */
+
 package object gaming {
+  //All Streaming events are  modeled as Adts
 
   sealed trait ServerEvent {
     def eventTime: Instant

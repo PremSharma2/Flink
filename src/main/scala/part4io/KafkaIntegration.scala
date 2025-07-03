@@ -11,7 +11,7 @@ import org.apache.flink.streaming.connectors.kafka.FlinkKafkaProducer
 
 object KafkaIntegration {
 
-  val env = StreamExecutionEnvironment.getExecutionEnvironment
+  val env: StreamExecutionEnvironment = StreamExecutionEnvironment.getExecutionEnvironment
 
   // read simple data (strings) from a Kafka topic
   def readStrings(): Unit = {

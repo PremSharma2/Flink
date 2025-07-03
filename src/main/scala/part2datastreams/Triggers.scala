@@ -13,14 +13,18 @@ object Triggers {
 
   // Triggers -> WHEN a window function is executed
 
-  val env = StreamExecutionEnvironment.getExecutionEnvironment
+  val env: StreamExecutionEnvironment =
+    StreamExecutionEnvironment
+      .getExecutionEnvironment
+
 
   def demoCountTrigger(): Unit = {
-    val shoppingCartEvents: DataStream[String] = env
-      .addSource(new ShoppingCartEventsGenerator(500, 2)) // 2 events/second
-      .windowAll(TumblingProcessingTimeWindows.of(Time.seconds(5))) // 10 events/window
-      .trigger(CountTrigger.of[TimeWindow](5)) // the window function runs every 5 elements
-      .process(new CountByWindowAll) // runs twice for the same window
+    val shoppingCartEvents: DataStream[String] =
+      env
+        .addSource(new ShoppingCartEventsGenerator(500, 2)) // 2 events/second
+        .windowAll(TumblingProcessingTimeWindows.of(Time.seconds(5))) // 10 events/window
+        .trigger(CountTrigger.of[TimeWindow](5)) // the window function runs every 5 elements
+        .process(new CountByWindowAll) // runs twice for the same window
 
     shoppingCartEvents.print()
     env.execute()
@@ -44,11 +48,12 @@ object Triggers {
   // purging trigger - clear the window when it fires
 
   def demoPurgingTrigger(): Unit = {
-    val shoppingCartEvents: DataStream[String] = env
-      .addSource(new ShoppingCartEventsGenerator(500, 2)) // 2 events/second
-      .windowAll(TumblingProcessingTimeWindows.of(Time.seconds(5))) // 10 events/window
-      .trigger(PurgingTrigger.of(CountTrigger.of[TimeWindow](5))) // the window function runs every 5 elements, THEN CLEARS THE WINDOW
-      .process(new CountByWindowAll) // runs twice for the same window
+    val shoppingCartEvents: DataStream[String] =
+      env
+        .addSource(new ShoppingCartEventsGenerator(500, 2)) // 2 events/second
+        .windowAll(TumblingProcessingTimeWindows.of(Time.seconds(5))) // 10 events/window
+        .trigger(PurgingTrigger.of(CountTrigger.of[TimeWindow](5))) // the window function runs every 5 elements, THEN CLEARS THE WINDOW
+        .process(new CountByWindowAll) // runs twice for the same window
 
     shoppingCartEvents.print()
     env.execute()
@@ -84,5 +89,17 @@ class CountByWindowAll extends ProcessAllWindowFunction[ShoppingCartEvent, Strin
   override def process(context: Context, elements: Iterable[ShoppingCartEvent], out: Collector[String]): Unit = {
     val window = context.window
     out.collect(s"Window [${window.getStart} - ${window.getEnd}] ${elements.size}")
+  }
+}
+
+class CountEventsWindow extends ProcessAllWindowFunction[ShoppingCartEvent, String, TimeWindow] {
+
+  override def process(context: Context, elements: Iterable[ShoppingCartEvent], out: Collector[String]): Unit = {
+    val count = elements.size
+    val highValueEventsCountInwindow = elements.collect {
+      case e: AddToShoppingCartEvent if e.quantity >= 7 => e
+    }.size
+
+    out.collect(s"Window [${context.window.getStart} - ${context.window.getEnd}] has $count events, $highValueEventsCountInwindow high-value adds.")
   }
 }

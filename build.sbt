@@ -12,6 +12,8 @@ val flinkDependencies = Seq(
   "org.apache.flink" % "flink-clients_2.12" % flinkVersion,
   "org.apache.flink" % "flink-scala_2.12" % flinkVersion,
   "org.apache.flink" % "flink-streaming-scala_2.12" % flinkVersion
+   //"org.apache.flink" %% "flink-cep-scala" % "1.15.0"
+
 )
 
 val flinkConnectors = Seq(
