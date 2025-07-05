@@ -8,6 +8,7 @@ import org.apache.flink.streaming.api.windowing.time.Time
 import org.apache.flink.streaming.api.windowing.triggers.{CountTrigger, PurgingTrigger}
 import org.apache.flink.streaming.api.windowing.windows.TimeWindow
 import org.apache.flink.util.Collector
+import part2datastreams.datagenerator.DataGenerator.ShoppingCartEventsGenerator
 
 object Triggers {
 

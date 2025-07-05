@@ -7,6 +7,7 @@ import org.apache.flink.streaming.api.scala._
 import org.apache.flink.streaming.api.windowing.assigners.TumblingProcessingTimeWindows
 import org.apache.flink.streaming.api.windowing.time.Time
 import org.apache.flink.util.Collector
+import part2datastreams.datagenerator.DataGenerator.{CatalogEventsGenerator, SingleShoppingCartEventsGenerator}
 
 object MultipleStreams {
 
@@ -20,6 +21,7 @@ object MultipleStreams {
   // Unioning = combining the output of multiple streams into just one
   def demoUnion(): Unit = {
     val env = StreamExecutionEnvironment.getExecutionEnvironment
+    env.setParallelism(2)
 
     // define two streams of the same type
     val shoppingCartEventsKafka: DataStream[ShoppingCartEvent] =
@@ -36,13 +38,52 @@ object MultipleStreams {
   }
 
   // window join = elements belong to the same window + some join condition
+  /*
+TODO
+  Both shoppingCartEvents and catalogEvents are processed by 2 subtasks each
+  Internally, Flink keyBys both streams using userId
+  A co-partitioning step ensures that:
+  All events with the same userId end up in the same subtask
+  his is required because Flink performs local joins only —
+  so all matching keys must be on the same node (or subtask/thread)
+   For each (key, window) combination, Flink maintains:
+  Map[
+  userId,
+  Map[
+    window,
+    {
+      leftBuffer: List[ShoppingCartEvent],
+      rightBuffer: List[CatalogEvent]
+    }
+  ]
+]
+TODO
+    Join Logic Executes on Trigger
+    You’re using Processing Time windows, so the default trigger is:
+    When that happens, Flink will:
+   Iterate through all pairs of:
+    (leftBuffer × rightBuffer) for each (userId, window)
+   Emit joined results via the .apply() function
+   ProcessingTimeTrigger: fires when system time > window.end
+
+   [ Shopping Cart Stream ]       [ Catalog Stream ]
+         |                           |
+         |------ join (key = userId)|
+                         |
+                 out.collect(String) --------> [ Map → ToUpperCase ]
+                         |
+               (can go to another node/thread)
+         O/p event is emitted here
+   */
   def demoWindowJoins(): Unit = {
     val env = StreamExecutionEnvironment.getExecutionEnvironment
+    env.setParallelism(2)
 
     val shoppingCartEvents = env.addSource(new SingleShoppingCartEventsGenerator(1000, sourceId = Option("kafka")))
     val catalogEvents = env.addSource(new CatalogEventsGenerator(200))
 
-    val joinedStream = shoppingCartEvents
+    val joinedStream =
+      shoppingCartEvents
       .join(catalogEvents)
       // provide a join condition
       .where(shoppingCartEvent => shoppingCartEvent.userId)
@@ -51,8 +92,10 @@ object MultipleStreams {
       .window(TumblingProcessingTimeWindows.of(Time.seconds(5)))
       // do something with correlated events
       .apply {
-        (shoppingCartEvent, catalogEvent) =>
-          s"User ${shoppingCartEvent.userId} browsed at ${catalogEvent.time} and bought at ${shoppingCartEvent.time}"
+           (shoppingCartEvent, catalogEvent) =>
+            s"User ${shoppingCartEvent.userId} " +
+            s"browsed at ${catalogEvent.time} and " +
+            s"bought at ${shoppingCartEvent.time}"
       }
 
     joinedStream.print()
@@ -88,9 +131,10 @@ object MultipleStreams {
       )
       .keyBy(_.userId)
 
-    val intervalJoinedStream = shoppingCartEvents
+    val intervalJoinedStream =
+       shoppingCartEvents
       .intervalJoin(catalogEvents)
-      .between(Time.seconds(-2), Time.seconds(2))
+      .between(Time.seconds(-2), Time.seconds(2))// it will Correlate the Two Events A and B if time limit or diff does not cross 2 seconds
       .lowerBoundExclusive() // interval is by default inclusive
       .upperBoundExclusive()
       .process(new ProcessJoinFunction[ShoppingCartEvent, CatalogEvent, String] {
@@ -99,8 +143,10 @@ object MultipleStreams {
                                      right: CatalogEvent,
                                      ctx: ProcessJoinFunction[ShoppingCartEvent, CatalogEvent, String]#Context,
                                      out: Collector[String]
-                                   ): Unit =
-          out.collect(s"User ${left.userId} browsed at ${right.time} and bought at ${left.time}")
+                                   ): Unit = {
+          //emit the Output event to Downstream Flink
+          out.collect(s"User ${left.userId} browsed Product on Offline Store  at ${right.time} and purchased From OnLine App at   ${left.time}")
+        }
       })
 
     intervalJoinedStream.print()
@@ -110,10 +156,30 @@ object MultipleStreams {
   // connect = two streams are treated with the same "operator"
   def demoConnect(): Unit = {
     val env = StreamExecutionEnvironment.getExecutionEnvironment
+    env.setParallelism(1)
 
     // two separate streams
-    val shoppingCartEvents = env.addSource(new SingleShoppingCartEventsGenerator(100)).setParallelism(1)
-    val catalogEvents = env.addSource(new CatalogEventsGenerator(1000)).setParallelism(1)
+    val shoppingCartEvents =
+      env.addSource(new SingleShoppingCartEventsGenerator(100))
+        .assignTimestampsAndWatermarks(
+          WatermarkStrategy.forBoundedOutOfOrderness(java.time.Duration.ofMillis(500))
+            .withTimestampAssigner(new SerializableTimestampAssigner[ShoppingCartEvent] {
+              override def extractTimestamp(element: ShoppingCartEvent, recordTimestamp: Long): Long =
+                element.time.toEpochMilli
+            })
+        ).setParallelism(1)
+
+
+    val catalogEvents =
+      env.addSource(new CatalogEventsGenerator(1000))
+      .assignTimestampsAndWatermarks(
+        WatermarkStrategy.forBoundedOutOfOrderness(java.time.Duration.ofMillis(500))
+          .withTimestampAssigner(new SerializableTimestampAssigner[CatalogEvent] {
+            override def extractTimestamp(element: CatalogEvent, recordTimestamp: Long): Long =
+              element.time.toEpochMilli
+          })
+      ).setParallelism(1)
+
 
     // connect the streams
     val connectedStream: ConnectedStreams[ShoppingCartEvent, CatalogEvent] = shoppingCartEvents.connect(catalogEvents)
@@ -124,6 +190,7 @@ object MultipleStreams {
 
     val ratioStream: DataStream[Double] = connectedStream.process(
       new CoProcessFunction[ShoppingCartEvent, CatalogEvent, Double] {
+
         var shoppingCartEventCount = 0
         var catalogEventCount = 0
 

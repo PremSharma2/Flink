@@ -2,13 +2,11 @@ package part2datastreams
 
 import generators.shopping._
 import org.apache.flink.api.common.eventtime.{SerializableTimestampAssigner, WatermarkStrategy}
-import org.apache.flink.streaming.api.functions.windowing.ProcessAllWindowFunction
 import org.apache.flink.streaming.api.scala._
-import org.apache.flink.streaming.api.scala.function.ProcessAllWindowFunction
 import org.apache.flink.streaming.api.windowing.assigners.TumblingEventTimeWindows
 import org.apache.flink.streaming.api.windowing.triggers.{Trigger, TriggerResult}
 import org.apache.flink.streaming.api.windowing.windows.TimeWindow
-import org.apache.flink.util.Collector
+import part2datastreams.datagenerator.DataGenerator.ShoppingCartEventsGenerator
 
 import java.time.Duration
 
@@ -16,7 +14,7 @@ object CustomTrigger {
 
 
   // A real-world e-commerce use case: Fire early if high-value cart is detected, otherwise wait for window end
-  class HighValueCartTrigger(thresholdQty: Int) extends Trigger[ShoppingCartEvent, TimeWindow] {
+  private class HighValueCartTrigger(thresholdQty: Int) extends Trigger[ShoppingCartEvent, TimeWindow] {
 
     override def onElement(
                             element: ShoppingCartEvent,

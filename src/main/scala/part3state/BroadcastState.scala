@@ -7,6 +7,7 @@ import org.apache.flink.streaming.api.functions.co.KeyedBroadcastProcessFunction
 import org.apache.flink.streaming.api.functions.source.SourceFunction
 import org.apache.flink.streaming.api.scala._
 import org.apache.flink.util.Collector
+import part2datastreams.datagenerator.DataGenerator.SingleShoppingCartEventsGenerator
 
 object BroadcastState {
 
