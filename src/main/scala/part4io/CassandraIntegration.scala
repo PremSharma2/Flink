@@ -5,13 +5,17 @@ import org.apache.flink.streaming.connectors.cassandra.CassandraSink
 
 object CassandraIntegration {
 
-  val env = StreamExecutionEnvironment.getExecutionEnvironment
+  val env: StreamExecutionEnvironment =
+       StreamExecutionEnvironment
+      .getExecutionEnvironment
 
   case class Person(name: String, age: Int)
 
   // write data to Cassandra
-  def demoWriteDataToCassandra(): Unit = {
-    val people = env.fromElements(
+  private def demoWriteDataToCassandra(): Unit = {
+    val people =
+      env
+      .fromElements(
       Person("Daniel", 99),
       Person("Alice", 12),
       Person("Julie", 14),
@@ -22,7 +26,8 @@ object CassandraIntegration {
     val personTuples: DataStream[(String, Int)] = people.map(p => (p.name, p.age))
 
     // write the data
-    CassandraSink.addSink(personTuples) // builder pattern
+       CassandraSink //   Cassandra Flink Connector
+      .addSink(personTuples) // builder pattern
       .setQuery("insert into rtjvm.people(name, age) values (?, ?)")
       .setHost("localhost")
       .build()

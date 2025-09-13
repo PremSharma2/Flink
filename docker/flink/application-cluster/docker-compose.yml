@@ -4,7 +4,7 @@ services:
     image: flink:latest
     ports:
       - "8081:8081"
-    command: standalone-job --job-classname com.job.ClassName
+    command: standalone-job --job-classname  part2datastreams.WindowFunctionsExercise
     volumes:
       - ../artifacts:/opt/flink/usrlib
     environment:

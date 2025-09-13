@@ -34,6 +34,7 @@ object TimeBasedTransformations {
   class CountByWindowAll extends ProcessAllWindowFunction[ShoppingCartEvent, String, TimeWindow] {
     override def process(context: Context, elements: Iterable[ShoppingCartEvent], out: Collector[String]): Unit = {
       val window = context.window
+      //emmiting events
       out.collect(s"Window [${window.getStart} - ${window.getEnd}] ${elements.size}")
     }
   }
@@ -51,11 +52,15 @@ object TimeBasedTransformations {
       shoppingCartEvents.windowAll(TumblingProcessingTimeWindows.of(Time.seconds(3)))
     }
 
+    //Operator
     def countEventsByWindow: DataStream[String] =
          groupedEventsByWindow
         .process(new CountByWindowAll)
+
+    //Sink
          countEventsByWindow.print()
 
+    //Lazy evaauation of flink
     env.execute()
   }
 

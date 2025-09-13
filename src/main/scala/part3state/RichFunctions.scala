@@ -10,7 +10,10 @@ import part2datastreams.datagenerator.DataGenerator.SingleShoppingCartEventsGene
 
 object RichFunctions {
 
-  val env = StreamExecutionEnvironment.getExecutionEnvironment
+  val env: StreamExecutionEnvironment =
+    StreamExecutionEnvironment
+      .getExecutionEnvironment
+
   env.setParallelism(1)
 
   val numbersStream: DataStream[Int] = env.fromElements(1,2,3,4,5,6)
@@ -19,18 +22,23 @@ object RichFunctions {
   val tenxNumbers: DataStream[Int] = numbersStream.map(_ * 10)
 
   // "explicit" map functions
-  val tenxNumbers_v2: DataStream[Int] = numbersStream.map(new MapFunction[Int, Int] {
-    override def map(value: Int) = value * 10
+  val tenxNumbers_v2: DataStream[Int] = numbersStream.map(
+    new MapFunction[Int, Int] {
+    override def map(value: Int): Int = value * 10
   })
 
   // Rich Map function
-  val tenxNumbers_v3: DataStream[Int] = numbersStream.map(new RichMapFunction[Int, Int] {
-    override def map(value: Int) = value * 10
+  val tenxNumbers_v3: DataStream[Int] =
+       numbersStream
+      .map(new RichMapFunction[Int, Int] {
+    override def map(value: Int): Int = value * 10
   })
 
   // Rich map function + lifecycle methods
-  val tenxNumbersWithLifecycle: DataStream[Int] = numbersStream.map(new RichMapFunction[Int, Int] {
-    override def map(value: Int) = value * 10 // mandatory override
+  val tenxNumbersWithLifecycle: DataStream[Int] =
+     numbersStream
+    .map(new RichMapFunction[Int, Int] {
+    override def map(value: Int): Int = value * 10 // mandatory override
 
     // optional overrides: lifecycle methods open/close
     // called BEFORE data goes through
@@ -43,17 +51,23 @@ object RichFunctions {
   })
 
   // ProcessFunction - the most general function abstraction in Flink
-  val tenxNumbersProcess: DataStream[Int] = numbersStream.process(new ProcessFunction[Int, Int] {
-    override def processElement(value: Int, ctx: ProcessFunction[Int, Int]#Context, out: Collector[Int]) =
+  val tenxNumbersProcess: DataStream[Int] =
+    numbersStream
+    .process(new ProcessFunction[Int, Int] {
+    override def processElement(value: Int, ctx: ProcessFunction[Int, Int]#Context, out: Collector[Int]): Unit = {
+      //emmit the events to downstream Flink
       out.collect(value * 10)
+    }
 
-    // can also override the lifecycle methods
+      // can also override the lifecycle methods
     override def open(parameters: Configuration): Unit =
       println("Process function starting")
 
     override def close(): Unit =
       println("Closing process function")
   })
+
+
 
   /**
    * Exercise: "explode" all purchase events to a single item
@@ -65,27 +79,41 @@ object RichFunctions {
    * - process functions
    */
   def exercise(): Unit = {
-    val exerciseEnv = StreamExecutionEnvironment.getExecutionEnvironment
-    val shoppingCartStream: DataStream[AddToShoppingCartEvent] = exerciseEnv.addSource(new SingleShoppingCartEventsGenerator(100)) // ~10 events/s
-      .filter(_.isInstanceOf[AddToShoppingCartEvent])
-      .map(_.asInstanceOf[AddToShoppingCartEvent])
+    val exerciseEnv =
+      StreamExecutionEnvironment
+      .getExecutionEnvironment
+
+    val shoppingCartStream: DataStream[AddToShoppingCartEvent] =
+         exerciseEnv
+        .addSource(new SingleShoppingCartEventsGenerator(100)) // ~10 events/s
+        .filter(_.isInstanceOf[AddToShoppingCartEvent])
+        .map(_.asInstanceOf[AddToShoppingCartEvent])
 
     // 1 - lambdas: flatMap
     val itemsPurchasedStream: DataStream[String] =
-      shoppingCartStream.flatMap(event => (1 to event.quantity).map(_ => event.sku))
+      shoppingCartStream.flatMap {
+        event =>
+          (1 to event.quantity)
+            .map(_ => event.sku)
+
+      }
 
     // 2 - explicit flatMap function
     val itemsPurchasedStream_v2: DataStream[String] =
       shoppingCartStream.flatMap(new FlatMapFunction[AddToShoppingCartEvent, String] {
-        override def flatMap(event: AddToShoppingCartEvent, out: Collector[String]) =
-          (1 to event.quantity).map(_ => event.sku).foreach(out.collect)
+        override def flatMap(event: AddToShoppingCartEvent, out: Collector[String]): Unit =
+            (1 to event.quantity)
+            .map(_ => event.sku)
+            .foreach(out.collect)
       })
 
     // 3 - rich flatMap function
     val itemsPurchasedStream_v3: DataStream[String] =
       shoppingCartStream.flatMap(new RichFlatMapFunction[AddToShoppingCartEvent, String] {
-        override def flatMap(event: AddToShoppingCartEvent, out: Collector[String]) =
-          (1 to event.quantity).map(_ => event.sku).foreach(out.collect)
+        override def flatMap(event: AddToShoppingCartEvent, out: Collector[String]): Unit =
+            (1 to event.quantity)
+            .map(_ => event.sku)
+            .foreach(out.collect)
 
         override def open(parameters: Configuration): Unit =
           println("Processing with rich flatMap function")
@@ -97,8 +125,10 @@ object RichFunctions {
     // 4 - process function
     val itemsPurchasedStream_v4: DataStream[String] =
       shoppingCartStream.process(new ProcessFunction[AddToShoppingCartEvent, String] {
-        override def processElement(event: AddToShoppingCartEvent, ctx: ProcessFunction[AddToShoppingCartEvent, String]#Context, out: Collector[String]) =
-          (1 to event.quantity).map(_ => event.sku).foreach(out.collect)
+        override def processElement(event: AddToShoppingCartEvent, ctx: ProcessFunction[AddToShoppingCartEvent, String]#Context, out: Collector[String]): Unit =
+            (1 to event.quantity)
+            .map(_ => event.sku)
+            .foreach(out.collect)
       })
 
     itemsPurchasedStream_v3.print()

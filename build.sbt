@@ -9,17 +9,15 @@ val postgresVersion = "42.2.2"
 val logbackVersion = "1.2.10"
 
 val flinkDependencies = Seq(
-  "org.apache.flink" % "flink-clients_2.12" % flinkVersion,
-  "org.apache.flink" % "flink-scala_2.12" % flinkVersion,
-  "org.apache.flink" % "flink-streaming-scala_2.12" % flinkVersion
-   //"org.apache.flink" %% "flink-cep-scala" % "1.15.0"
-
+  "org.apache.flink" %% "flink-clients" % flinkVersion,
+  "org.apache.flink" %% "flink-scala" % flinkVersion,
+  "org.apache.flink" %% "flink-streaming-scala" % flinkVersion,
 )
 
 val flinkConnectors = Seq(
-  "org.apache.flink" % "flink-connector-kafka_2.12" % flinkVersion,
-  "org.apache.flink" % "flink-connector-cassandra_2.12" % flinkVersion,
-  "org.apache.flink" % "flink-connector-jdbc_2.12" % flinkVersion,
+  "org.apache.flink" %% "flink-connector-kafka" % flinkVersion,
+  "org.apache.flink" %% "flink-connector-cassandra" % flinkVersion,
+  "org.apache.flink" %% "flink-connector-jdbc" % flinkVersion,
   "org.postgresql" % "postgresql" % postgresVersion
 )
 

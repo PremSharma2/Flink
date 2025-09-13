@@ -14,10 +14,10 @@ import org.apache.flink.util.Collector
 import java.time.Instant
 import scala.concurrent.duration._
 
-object WindowFunctions {
+object WindowFunctionsExercise {
 
   // use-case: stream of events for a gaming session
-
+ type OutPutEvent=String
   val env: StreamExecutionEnvironment = StreamExecutionEnvironment.getExecutionEnvironment
   env.setParallelism(2)
 
@@ -55,8 +55,13 @@ object WindowFunctions {
   // [0...3s] [3s...6s] [6s...9s]
   //creating the Grouped stream of windowed Stream with given time
   //DAG : Source → WatermarkAssigner (2 tasks) → network shuffle → WindowAll (1 task)
-  private val threeSecondsTumblingWindow: AllWindowedStream[ServerEvent, TimeWindow] =
-    eventStream.windowAll(TumblingEventTimeWindows.of(Time.seconds(3)))
+
+   val threeSecondsTumblingWindow: AllWindowedStream[ServerEvent, TimeWindow] =
+    eventStream
+      .windowAll(
+        TumblingEventTimeWindows
+          .of(Time.seconds(3))
+      )
   /*
     |----0----|----1----|--------2--------|--------3--------|---------4---------|---5---|--------6--------|---7---|--------8--------|--9--|------10-------|------11------|
     |         |         | bob registered  | sam registered  | sam online        |       | mary registered |       | carl registered |     | rob online    |              |
@@ -80,11 +85,12 @@ object WindowFunctions {
           └────────────┘         └────────────────────┘
 
    */
-  // count by windowAll
-  class CountByWindowAll extends AllWindowFunction[ServerEvent, String, TimeWindow] {
+  // count by windowAll it will used for net stage in DAG i.e Windowed opertion
+  class CountByWindowAll extends AllWindowFunction[ServerEvent, OutPutEvent, TimeWindow] {
     //                                                ^ input      ^ output  ^ window type
-    override def apply(window: TimeWindow, input: Iterable[ServerEvent], out: Collector[String]): Unit = {
+    override def apply(window: TimeWindow, input: Iterable[ServerEvent], out: Collector[OutPutEvent]): Unit = {
       val registrationEventCount = input.count(event => event.isInstanceOf[PlayerRegistered])
+      //emitting OutPutEvent and pushing that to downstream Flink
       out.collect(s"Window [${window.getStart} - ${window.getEnd}] $registrationEventCount")
     }
   }
@@ -97,13 +103,15 @@ object WindowFunctions {
      for each key individually.
       The output of the window function is interpreted as a regular non-windowed stream.
      */
-    val registrationsPerThreeSeconds: DataStream[String] = threeSecondsTumblingWindow.apply(new CountByWindowAll)
+    val registrationsPerThreeSeconds: DataStream[String] =
+      threeSecondsTumblingWindow
+        .apply(new CountByWindowAll)
     registrationsPerThreeSeconds.print()
     env.execute()
   }
 
   // alternative: process window function which offers a much richer API (lower-level)
-  class CountByWindowAllV2 extends ProcessAllWindowFunction[ServerEvent, String, TimeWindow] {
+  class CountByWindowAllV2 extends ProcessAllWindowFunction[ServerEvent, OutPutEvent, TimeWindow] {
 
     override def process(context: Context, elements: Iterable[ServerEvent], out: Collector[String]): Unit = {
       val window = context.window
@@ -119,7 +127,7 @@ object WindowFunctions {
   }
 
   // alternative 2: aggregate function
-  private class CountByWindowV3 extends AggregateFunction[ServerEvent, Long, Long] {
+    class CountByWindowV3 extends AggregateFunction[ServerEvent, Long, Long] {
     //                                             ^ input     ^ acc  ^ output
 
     // start counting from 0
@@ -138,7 +146,7 @@ object WindowFunctions {
     override def merge(a: Long, b: Long): Long = a + b
   }
 
-  private def demoCountByWindow_v3(): Unit = {
+   def demoCountByWindow_v3(): Unit = {
     /*
     Applies the given aggregation function to each window.
     The aggregation function is called for each Event,
@@ -155,11 +163,17 @@ object WindowFunctions {
    * Keyed streams and window functions
    */
   // each element will be assigned to a "mini-stream" for its own key
-  private val streamByType: KeyedStream[ServerEvent, String] = eventStream.keyBy(e => e.getClass.getSimpleName)
+   val streamByType: KeyedStream[ServerEvent, String] = eventStream.keyBy(e => e.getClass.getSimpleName)
 
   // for every key, we'll have a separate window allocation
-  //i.e perKey ,perWindow events are grouped to Worker Node on flink Cluster
-  private val threeSecondsTumblingWindowByType = streamByType.window(TumblingEventTimeWindows.of(Time.seconds(3)))
+  //i.e perKey, perWindow events are grouped to Worker Node on flink Cluster
+
+   val threeSecondsTumblingWindowByType =
+     streamByType
+     .window(
+       TumblingEventTimeWindows
+         .of(Time.seconds(3))
+     )
 
   /*
     === Registration Events Stream ===
@@ -207,24 +221,24 @@ Clears window state
 
    */
 
-  private class CountByWindow extends WindowFunction[ServerEvent, String, String, TimeWindow] {
+   class CountByWindow extends WindowFunction[ServerEvent, String, String, TimeWindow] {
     override def apply(key: String, window: TimeWindow, input: Iterable[ServerEvent], out: Collector[String]): Unit =
-      out.collect(s"$key: $window, ${input.size}")
+      out.collect(s"$key: $window, ${input.size}") // emitting the o/p events to downstream  Flink
   }
 
-  private def demoCountByTypeByWindow(): Unit = {
+   def demoCountByTypeByWindow(): Unit = {
     val finalStream = threeSecondsTumblingWindowByType.apply(new CountByWindow)
-    finalStream.print()
+    finalStream.print() // PrintSink Function
     env.execute()
   }
 
   // alternative: process function for windows
-  private class CountByWindowV2 extends ProcessWindowFunction[ServerEvent, String, String, TimeWindow] {
+   class CountByWindowV2 extends ProcessWindowFunction[ServerEvent, String, String, TimeWindow] {
     override def process(key: String, context: Context, elements: Iterable[ServerEvent], out: Collector[String]): Unit =
       out.collect(s"$key: ${context.window}, ${elements.size}")
   }
 
-  private def demoCountByTypeByWindow_v2(): Unit = {
+   def demoCountByTypeByWindow_v2(): Unit = {
     val finalStream = threeSecondsTumblingWindowByType.process(new CountByWindowV2)
     finalStream.print()
     env.execute()
@@ -355,7 +369,7 @@ Clears window state
    */
   // how many registration events do we receive in every 10 events we received?
 
-  class CountByGlobalWindowAll extends AllWindowFunction[ServerEvent, String, GlobalWindow] {
+  private class CountByGlobalWindowAll extends AllWindowFunction[ServerEvent, String, GlobalWindow] {
     //                                                    ^ input      ^ output  ^ window type
     override def apply(window: GlobalWindow, input: Iterable[ServerEvent], out: Collector[String]): Unit = {
       val registrationEventCount = input.count(event => event.isInstanceOf[PlayerRegistered])
@@ -375,6 +389,35 @@ Clears window state
       1 → 10 events collected → trigger fires → apply() called → result emitted
      11 → 20 events collected → trigger fires → apply() called → result emitted
      21 → only 3 events → no trigger → no output yet
+     4 parallel source subtasks are emitting ServerEvents like:
+TODO
+   PlayerRegistered("alice"), PlayerRegistered("bob"), ...
+   Each subtask pushes these to downstream operators.
+🔹 Step 2: .windowAll(GlobalWindows) is Applied
+   Since this is a .windowAll (i.e. non-keyed), Flink must consolidate events into a single subtask (parallelism = 1).
+     Flink inserts a rebalance/shuffle stage before the window:
+     Parallel Source (x4)  -->  ⤴ Shuffle ⤵  -->  WindowAll Operator (x1)
+
++------------------------+
+|  Flink Cluster         |
+|                        |
+|  +------------------+  |
+|  | TaskManager 1    |  |
+|  | - Source Subtask |  |
+|  +------------------+  |
+|                        |
+|  +------------------+  |
+|  | TaskManager 2    |  |
+|  | - Source Subtask |  |
+|  +------------------+  |
+|                        |
+|  +----------------------+   Shuffle all events
+|  | TaskManager 3        |  <-----------------------+
+|  | - GlobalWindow Task  |                          |
+|  +----------------------+                          |
+|                                                  All Sources
++-------------------------------------------------------------+
+
 
    */
   def demoGlobalWindow(): Unit = {
@@ -410,6 +453,7 @@ Clears window state
   }
 
   def main(args: Array[String]): Unit = {
-    windowFunctionsExercise()
+    demoSlidingAllWindows()
   }
+
 }

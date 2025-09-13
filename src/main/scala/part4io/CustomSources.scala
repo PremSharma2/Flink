@@ -10,15 +10,17 @@ import java.util.Scanner
 import scala.util.Random
 
 object CustomSources {
-  val env = StreamExecutionEnvironment.getExecutionEnvironment
+  val env: StreamExecutionEnvironment =
+       StreamExecutionEnvironment
+      .getExecutionEnvironment
 
   // source of numbers, randomly generated
-  class RandomNumberGeneratorSource(minEventsPerSeconds: Double)
+  private class RandomNumberGeneratorSource(minEventsPerSeconds: Double)
   extends RichParallelSourceFunction[Long] {
 
     // create local fields/methods
-    val maxSleepTime = (1000 / minEventsPerSeconds).toLong
-    var isRunning: Boolean = true
+    private val maxSleepTime = (1000 / minEventsPerSeconds).toLong
+    private var isRunning: Boolean = true
 
     // called ONCE, when the function is instantiated
     // SourceFunction/RichSourceFunction runs on a (single) dedicated thread
@@ -30,7 +32,9 @@ object CustomSources {
         val nextNumber = Random.nextLong()
         Thread.sleep(sleepTime)
 
-        // push something to the output
+
+        //Emmit the event of Long type in a Stream
+        //or  push something to the output or downstream
         ctx.collect(nextNumber)
       }
 
@@ -49,7 +53,10 @@ object CustomSources {
   }
 
   def demoSourceFunction(): Unit = {
-    val numbersStream: DataStream[Long] = env.addSource(new RandomNumberGeneratorSource(10)).setParallelism(10)
+    val numbersStream: DataStream[Long] =
+          env
+         .addSource(new RandomNumberGeneratorSource(10)) /// above emission of events are wrapped in a Stream
+        .setParallelism(10)
     numbersStream.print()
     env.execute()
   }
@@ -58,10 +65,10 @@ object CustomSources {
    * Create a source function that reads data from a socket.
    */
 
-  class SocketStringSource(host: String, port: Int) extends RichSourceFunction[String] {
+  private class SocketStringSource(host: String, port: Int) extends RichSourceFunction[String] {
     // whenever you manage a resource, use a RichSourceFunction
-    var socket: Socket = _
-    var isRunning = true
+    private var socket: Socket = _
+    private var isRunning = true
 
     override def run(ctx: SourceFunction.SourceContext[String]): Unit = {
       val scanner = new Scanner(socket.getInputStream)
@@ -80,7 +87,7 @@ object CustomSources {
       socket.close()
   }
 
-  def demoSocketSource(): Unit = {
+  private def demoSocketSource(): Unit = {
     val socketStringStream = env.addSource(new SocketStringSource("localhost", 12345))
     socketStringStream.print()
     env.execute()
@@ -91,7 +98,7 @@ object CustomSources {
   }
 }
 
-/*
+/**
   - start DataSender
   - start Flink
   - DataSender -> Flink

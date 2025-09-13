@@ -10,23 +10,28 @@ import java.util.Scanner
 
 object CustomSinks {
 
-  val env = StreamExecutionEnvironment.getExecutionEnvironment
-  val stringStream: DataStream[String] = env.fromElements(
-    "This is an example of a sink function",
-    "some other string",
-    "Daniel says this is ok"
-  )
+  val env: StreamExecutionEnvironment =
+    StreamExecutionEnvironment
+      .getExecutionEnvironment
+
+
+  val stringStream: DataStream[String] =
+    env.fromElements(
+      "This is an example of a sink function",
+      "some other string",
+      "Daniel says this is ok"
+    )
 
   // push the strings to a file sink
 
   // instantiated once per thread
-  class FileSink(path: String) extends RichSinkFunction[String] {
+  private class FileSink(path: String) extends RichSinkFunction[String] {
     /*
       - hold state
       - lifecycle methods
      */
 
-    var writer: PrintWriter = _
+    private var writer: PrintWriter = _
 
     // called once per event in the datastream
     override def invoke(event: String, context: SinkFunction.Context): Unit = {
@@ -80,7 +85,7 @@ object CustomSinks {
   }
 
   def main(args: Array[String]): Unit = {
-    demoSocketSink()
+    demoFileSink()
   }
 }
 

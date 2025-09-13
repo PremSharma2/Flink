@@ -13,23 +13,29 @@ object JDBCIntegration {
 
   // write data to JDBC
   def demoWriteToJDBC(): Unit = {
-    val people = env.fromElements(
+
+    val people =
+      env
+      .fromElements(
       Person("Daniel", 99),
       Person("Alice", 1),
       Person("Bob", 10),
       Person("Mary Jane", 43)
     )
 
-    val jdbcSink = JdbcSink.sink[Person](
+    val jdbcSink =
+      JdbcSink // Flink JDBC Connector
+      .sink[Person](
       // 1 - SQL statement
       "insert into people (name, age) values (?, ?)",
-      new JdbcStatementBuilder[Person] { // the way to expand the wildcards with actual values
+        new JdbcStatementBuilder[Person] { // the way to expand the wildcards with actual values
         override def accept(statement: PreparedStatement, person: Person): Unit = {
           statement.setString(1, person.name) // the first ? is replaced with person.name
           statement.setInt(2, person.age) // similar
         }
       },
-      new JdbcConnectionOptions.JdbcConnectionOptionsBuilder()
+      new JdbcConnectionOptions
+        .JdbcConnectionOptionsBuilder()
         .withUrl("jdbc:postgresql://localhost:5432/rtjvm")
         .withDriverName("org.postgresql.Driver")
         .withUsername("docker")

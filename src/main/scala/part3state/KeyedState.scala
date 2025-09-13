@@ -10,24 +10,45 @@ import org.apache.flink.util.Collector
 import part2datastreams.datagenerator.DataGenerator.SingleShoppingCartEventsGenerator
 
 object KeyedState {
+private type UserID=String
+private type EventType=String
+private type OutPutEvent=String
+private type EventCount=Long
 
-  val env = StreamExecutionEnvironment.getExecutionEnvironment
-  val shoppingCartEvents = env.addSource(
+  val env: StreamExecutionEnvironment = StreamExecutionEnvironment.getExecutionEnvironment
+  val shoppingCartEvents: DataStream[ShoppingCartEvent] =
+    env
+      .addSource(
     new SingleShoppingCartEventsGenerator(
       sleepMillisBetweenEvents = 100, // ~ 10 events/s
       generateRemoved = true
     )
   )
 
-  val eventsPerUser: KeyedStream[ShoppingCartEvent, String] = shoppingCartEvents.keyBy(_.userId)
+  val eventsPerUser: KeyedStream[ShoppingCartEvent, UserID] = shoppingCartEvents.keyBy(_.userId)
 
   def demoValueState(): Unit = {
-    /*
+    /**
       How many events PER USER have been generated?
+     ┌─────────────────────┐
+     │  Operator Subtask 0 │
+     └─────────────────────┘
+     | Handles keys: A, B, D
+     | One KeyedProcessFunction instance
+     | - activeKey = A  → state[A]
+     | - activeKey = B  → state[B]
+     | - etc.
+
+     ┌─────────────────────┐
+     │  Operator Subtask 1 │
+     └─────────────────────┘
+     | Handles keys: C, E, F
+
+
      */
 
     val numEventsPerUserNaive = eventsPerUser.process(
-      new KeyedProcessFunction[String, ShoppingCartEvent, String] { // instantiated ONCE PER KEY
+      new KeyedProcessFunction[UserID, ShoppingCartEvent, OutPutEvent] { // instantiated ONCE PER KEY
         //                     ^ key   ^ event            ^ result
 
         var nEventsForThisUser = 0
@@ -35,7 +56,7 @@ object KeyedState {
         override def processElement(
                                      value: ShoppingCartEvent,
                                      ctx: KeyedProcessFunction[String, ShoppingCartEvent, String]#Context,
-                                     out: Collector[String]
+                                     out: Collector[OutPutEvent]
                                    ): Unit = {
           nEventsForThisUser += 1
           out.collect(s"User ${value.userId} - $nEventsForThisUser")
@@ -43,14 +64,15 @@ object KeyedState {
       }
     )
 
-    /*
+    /**
       Problems with local vars
       - they are local, so other nodes don't see them
       - if a node crashes, the var disappears
+      - This is wrong logic, because nEventsForThisUser is shared for all keys in the same task it will corrupt the calculation
      */
 
     val numEventsPerUserStream = eventsPerUser.process(
-      new KeyedProcessFunction[String, ShoppingCartEvent, String] {
+      new KeyedProcessFunction[UserID, ShoppingCartEvent, OutPutEvent] {
 
         // can call .value to get current state
         // can call .update(newValue) to overwrite
@@ -64,9 +86,9 @@ object KeyedState {
 
         override def processElement(
                                      value: ShoppingCartEvent,
-                                     ctx: KeyedProcessFunction[String, ShoppingCartEvent, String]#Context,
-                                     out: Collector[String]
-                                   ) = {
+                                     ctx: KeyedProcessFunction[UserID, ShoppingCartEvent, OutPutEvent]#Context,
+                                     out: Collector[OutPutEvent]
+                                   ): Unit = {
           val nEventsForThisUser = stateCounter.value()
           stateCounter.update(nEventsForThisUser + 1)
           out.collect(s"User ${value.userId} - ${nEventsForThisUser + 1}")
@@ -82,7 +104,7 @@ object KeyedState {
   def demoListState(): Unit = {
     // store all the events per user id
     val allEventsPerUserStream = eventsPerUser.process(
-      new KeyedProcessFunction[String, ShoppingCartEvent, String] {
+      new KeyedProcessFunction[UserID, ShoppingCartEvent, OutPutEvent] {
         // create state here
         /*
           Capabilities
@@ -103,8 +125,8 @@ object KeyedState {
         override def processElement(
                                      event: ShoppingCartEvent,
                                      ctx: KeyedProcessFunction[String, ShoppingCartEvent, String]#Context,
-                                     out: Collector[String]
-                                   ) = {
+                                     out: Collector[OutPutEvent]
+                                   ): Unit = {
           stateEventsForUser.add(event)
           // import the Scala converters for collections
           // Scala 2.12
@@ -128,20 +150,21 @@ object KeyedState {
   def demoMapState(): Unit = {
     // count how many events PER TYPE were ingested PER USER
     val streamOfCountsPerType = eventsPerUser.process(
-      new KeyedProcessFunction[String, ShoppingCartEvent, String] {
+      new KeyedProcessFunction[UserID, ShoppingCartEvent, OutPutEvent] {
         // Scala collection converters
         import scala.collection.JavaConverters._ // implicit converters (extension methods)
 
         // create the state
-        var stateCountsPerEventType: MapState[String, Long] = _ // keep this bounded
+        var stateCountsPerEventType: MapState[EventType, EventCount] = _ // keep this bounded
 
         // initialize the state
         override def open(parameters: Configuration): Unit = {
+
           stateCountsPerEventType = getRuntimeContext.getMapState(
-            new MapStateDescriptor[String, Long](
+            new MapStateDescriptor[EventType, EventCount](
               "per-type-counter",
-              classOf[String],
-              classOf[Long]
+              classOf[UserID],
+              classOf[EventCount]
             )
           )
         }
@@ -149,8 +172,8 @@ object KeyedState {
         override def processElement(
                                      event: ShoppingCartEvent,
                                      ctx: KeyedProcessFunction[String, ShoppingCartEvent, String]#Context,
-                                     out: Collector[String]
-                                   ) = {
+                                     out: Collector[OutPutEvent]
+                                   ): Unit = {
           // fetch the type of the event
           val eventType = event.getClass.getSimpleName
           // updating the state
@@ -163,6 +186,7 @@ object KeyedState {
           }
 
           // push some output
+          //emmit the O/P events
           out.collect(s"${ctx.getCurrentKey} - ${stateCountsPerEventType.entries().asScala.mkString(", ")}")
         }
       }
@@ -202,7 +226,7 @@ object KeyedState {
                                      event: ShoppingCartEvent,
                                      ctx: KeyedProcessFunction[String, ShoppingCartEvent, String]#Context,
                                      out: Collector[String]
-                                   ) = {
+                                   ): Unit = {
           stateEventsForUser.add(event)
           val currentEvents = stateEventsForUser.get().asScala.toList
           if (currentEvents.size > 10)
@@ -218,6 +242,6 @@ object KeyedState {
   }
 
   def main(args: Array[String]): Unit = {
-    demoListStateWithClearance()
+    demoMapState()
   }
 }

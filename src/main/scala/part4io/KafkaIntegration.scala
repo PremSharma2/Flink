@@ -11,11 +11,14 @@ import org.apache.flink.streaming.connectors.kafka.FlinkKafkaProducer
 
 object KafkaIntegration {
 
-  val env: StreamExecutionEnvironment = StreamExecutionEnvironment.getExecutionEnvironment
+  val env: StreamExecutionEnvironment =
+    StreamExecutionEnvironment
+    .getExecutionEnvironment
 
   // read simple data (strings) from a Kafka topic
   def readStrings(): Unit = {
-    val kafkaSource = KafkaSource.builder[String]()
+    val kafkaSource =
+      KafkaSource.builder[String]()
       .setBootstrapServers("localhost:9092")
       .setTopics("events")
       .setGroupId("events-group")
@@ -23,7 +26,12 @@ object KafkaIntegration {
       .setValueOnlyDeserializer(new SimpleStringSchema())
       .build()
 
-    val kafkaStrings: DataStream[String] = env.fromSource(kafkaSource, WatermarkStrategy.noWatermarks(), "Kafka Source")
+    val kafkaStrings: DataStream[String] =
+          env
+          .fromSource(
+          kafkaSource,
+          WatermarkStrategy.noWatermarks(),
+          "Kafka Source")
 
     // use the DS
     kafkaStrings.print()
@@ -32,7 +40,7 @@ object KafkaIntegration {
 
   // read custom data
   case class Person(name: String, age: Int)
-  class PersonDeserializer extends DeserializationSchema[Person] {
+  private class PersonDeserializer extends DeserializationSchema[Person] {
     override def deserialize(message: Array[Byte]): Person = {
       // format: name,age
       val string = new String(message)
@@ -64,31 +72,35 @@ object KafkaIntegration {
   }
 
   // write custom data
-  // need serializer
-  class PersonSerializer extends SerializationSchema[Person] {
+  // need serializer which convert Domain object to bytes
+  private class PersonSerializer extends SerializationSchema[Person] {
     override def serialize(person: Person): Array[Byte] =
       s"${person.name},${person.age}".getBytes("UTF-8")
   }
 
   def writeCustomData(): Unit = {
-    val kafkaSink = new FlinkKafkaProducer[Person](
+    val kafkaSink =
+      new FlinkKafkaProducer[Person](
       "localhost:9092", // bootstrap server
       "people", // topic
-      new PersonSerializer
+      new PersonSerializer // flink needs this to serilaze the JVM objects
     )
 
-    val peopleStream = env.fromElements(
+    //Platform is emitting O/P events to send to Kafka Topic
+    val peopleStream =
+      env.fromElements(
       Person("Alice", 10),
       Person("Bob", 11),
       Person("Charlie", 12),
     )
 
+    //Sink
     peopleStream.addSink(kafkaSink)
     peopleStream.print()
     env.execute()
   }
 
   def main(args: Array[String]): Unit = {
-    writeCustomData()
+    readStrings()
   }
 }

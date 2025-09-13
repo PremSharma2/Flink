@@ -8,25 +8,70 @@ import org.apache.flink.streaming.api.checkpoint.CheckpointedFunction
 import org.apache.flink.streaming.api.scala._
 import org.apache.flink.util.Collector
 import part2datastreams.datagenerator.DataGenerator.SingleShoppingCartEventsGenerator
+import part3state.Typealias.{NumberOfEventsCount, UserID}
 
+/*
+Concept of Checkpointing
+        ┌──────────────┐
+        │ Source Task  │
+        └────┬─────────┘
+             ▼ emits
+     [event1, event2, B#42]
+             ▼
+         keyBy → routes
+             ▼
+ ┌──────────────────────────────┐
+ │  Task-0: KeyedProcessFunction│
+ │ - Receives barrier from all  │
+ │ - Buffers in-flight data     │
+ │ - Serializes keyed state     │
+ │ - Forwards barrier downstream│
+ └──────────────────────────────┘
+             ▼
+        Sink Task
+        - Waits for barrier
+        - Takes snapshot
+        - ACKs to JobManager
+
+         ┌────────────┐      ┌────────────┐       ┌────────────┐
+ │ Alice@t1   │─────▶│ ProcessFn  │─────▶ │ PrintSink  │
+ └────────────┘      │  State: 1  │       └────────────┘
+                     │  ↓         │
+               Barrier#42 arrives │
+                     │            │
+                     │◀─ Buffer ──┘ ← Bob@t2
+         All barriers in → trigger snapshot
+                     ↓
+     Serialize: ValueState("Alice" → 1)
+                     ↓
+     Resume: processElement(Bob@t2)
+
+
+ */
 object Checkpoints {
+
+
 
   val env = StreamExecutionEnvironment.getExecutionEnvironment
 
   // set checkpoint intervals
   env.getCheckpointConfig.setCheckpointInterval(5000) // a checkpoint triggered every 5s
   // set checkpoint storage
-  env.getCheckpointConfig.setCheckpointStorage("file:///Users/daniel/dev/rockthejvm/courses/flink-essentials/checkpoints")
+  env.getCheckpointConfig.setCheckpointStorage("file:////Users/Prem/checkpoints")
 
-  /*
+  /**
     Keep track of the NUMBER OF AddToCart events PER USER, when quantity > a threshold (e.g. managing stock)
     Persist the data (state) via checkpoints
    */
 
-  val shoppingCartEvents =
-    env.addSource(new SingleShoppingCartEventsGenerator(sleepMillisBetweenEvents = 100, generateRemoved = true))
+  val shoppingCartEvents: DataStream[ShoppingCartEvent] =
+        env
+      .addSource(
+        new SingleShoppingCartEventsGenerator(
+          sleepMillisBetweenEvents = 100, generateRemoved = true))
 
-  val eventsByUser = shoppingCartEvents
+  val eventsByUser: DataStream[(String, Long)] =
+    shoppingCartEvents
     .keyBy(_.userId)
     .flatMap(new HighQuantityCheckpointedFunction(5))
 
@@ -37,18 +82,29 @@ object Checkpoints {
   }
 }
 
+
+object Typealias {
+  type UserID = String
+  type EventType = String
+  type OutPutEvent = String
+  type EventCount = Long
+  type NumberOfEventsCount = Long
+}
+
+
 class HighQuantityCheckpointedFunction(val threshold: Long)
-  extends FlatMapFunction[ShoppingCartEvent, (String, Long)]
+  extends FlatMapFunction[ShoppingCartEvent, (UserID, NumberOfEventsCount)]
   with CheckpointedFunction
   with CheckpointListener {
 
   var stateCount: ValueState[Long] = _ // instantiated PER KEY
 
-  override def flatMap(event: ShoppingCartEvent, out: Collector[(String, Long)]): Unit =
+
+  override def flatMap(event: ShoppingCartEvent, out: Collector[(UserID, NumberOfEventsCount)]): Unit =
     event match {
       case AddToShoppingCartEvent(userId, _, quantity, _) =>
         if (quantity > threshold) {
-          // update state
+          // update state only when if it falls in the above creteria
           val newUserEventCount = stateCount.value() + 1
           stateCount.update(newUserEventCount)
 
