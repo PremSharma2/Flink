@@ -1,4 +1,4 @@
-package part2datastreams
+package part2datastreams.StreamTransformation
 
 import org.apache.flink.api.common.functions.{FlatMapFunction, MapFunction, ReduceFunction}
 import org.apache.flink.api.common.serialization.SimpleStringEncoder

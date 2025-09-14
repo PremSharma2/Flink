@@ -1,4 +1,4 @@
-package part2datastreams
+package part2datastreams.StreamTransformation
 
 import generators.shopping._
 import org.apache.flink.api.common.eventtime.{SerializableTimestampAssigner, WatermarkStrategy}

@@ -434,6 +434,14 @@ TODO
    * Exercise: what was the time window (continuous 2s) when we had THE MOST registration events?
    * - what kind of window functions should we use? ALL WINDOW FUNCTION
    * - what kind of windows should we use? SLIDING WINDOWS
+   * This defines:
+   *
+   * Window size = 2 seconds
+   *
+   * Sliding interval = 1 second
+   * |------W1------|
+   *        |------W2------|
+   *               |------W3------|
    */
   class KeepWindowAndCountFunction extends AllWindowFunction[ServerEvent, (TimeWindow, Long), TimeWindow] {
     override def apply(window: TimeWindow, input: Iterable[ServerEvent], out: Collector[(TimeWindow, Long)]): Unit =
@@ -447,6 +455,7 @@ TODO
       .windowAll(SlidingEventTimeWindows.of(Time.seconds(2), Time.seconds(1)))
       .apply(new KeepWindowAndCountFunction)
 
+   //You bring the results from the stream back to the driver as a list.
     val localWindows: List[(TimeWindow, Long)] = slidingWindows.executeAndCollect().toList
     val bestWindow: (TimeWindow, Long) = localWindows.maxBy(_._2)
     println(s"The best window is ${bestWindow._1} with ${bestWindow._2} registration events.")
